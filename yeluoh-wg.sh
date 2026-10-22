@@ -17,48 +17,48 @@ need_root() {
 }
 
 is_installed() { command -v wg >/dev/null 2>&1 && command -v wg-quick >/dev/null 2>&1; }
-pause() { read -r -p $'\n按回车键继续...' _; }
+pause() { read -r -p $'\nPress Enter to continue...' _; }
 
 show_status() {
   clear 2>/dev/null || true
-  echo '========== WireGuard VPS 状态 =========='
+  echo '========== WireGuard VPS Status =========='
   if ! is_installed; then
-    echo '未检测到 WireGuard。'
+    echo 'WireGuard is not installed.'
     return
   fi
-  echo "程序：已安装 ($(wg --version 2>/dev/null | head -n1))"
-  if [[ -f "$WG_CONF" ]]; then echo "配置：$WG_CONF"; else echo "配置：未初始化 ($WG_CONF 不存在)"; fi
+  echo "Package: installed ($(wg --version 2>/dev/null | head -n1))"
+  if [[ -f "$WG_CONF" ]]; then echo "Config: $WG_CONF"; else echo "Config: not initialized ($WG_CONF not found)"; fi
   if systemctl is-active --quiet "wg-quick@$WG_IF" 2>/dev/null; then
-    echo "服务：运行中 (wg-quick@$WG_IF)"
+    echo "Service: active (wg-quick@$WG_IF)"
   else
-    echo "服务：未运行 (wg-quick@$WG_IF)"
+    echo "Service: inactive (wg-quick@$WG_IF)"
   fi
   if [[ -f "$WG_CONF" ]]; then
     local config_port runtime_port
     config_port=$(awk -F= '/^[[:space:]]*ListenPort[[:space:]]*=/ {gsub(/[[:space:]]/,"",$2); print $2; exit}' "$WG_CONF" || true)
     runtime_port=$(wg show "$WG_IF" listen-port 2>/dev/null || true)
     if [[ -n "$runtime_port" ]]; then
-      echo "UDP 监听端口：$runtime_port (运行中)"
-      [[ "$config_port" == "$runtime_port" ]] || echo "配置文件端口：${config_port:-未设置} (与运行状态不同)"
+      echo "UDP listen port: $runtime_port (active)"
+      [[ "$config_port" == "$runtime_port" ]] || echo "Config file port: ${config_port:-unset} (differs from runtime)"
     else
-      echo "UDP 监听端口：${config_port:-未设置} (服务未运行，以配置文件为准)"
+      echo "UDP listen port: ${config_port:-unset} (service inactive; showing config value)"
     fi
-    echo "出口网卡：$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1);exit}}')"
-    echo "IPv4 转发：$(sysctl -n net.ipv4.ip_forward 2>/dev/null || echo unknown)"
+    echo "Egress interface: $(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1);exit}}')"
+    echo "IPv4 forwarding: $(sysctl -n net.ipv4.ip_forward 2>/dev/null || echo unknown)"
   fi
   echo
-  echo '--- WireGuard 实时状态 ---'
+  echo '--- Live WireGuard Status ---'
   if ip link show "$WG_IF" >/dev/null 2>&1; then
     wg show "$WG_IF" 2>&1 || true
   else
-    echo "接口 $WG_IF 当前未启动。"
+    echo "Interface $WG_IF is not up."
   fi
-  echo '--- 已登记客户端 ---'
+  echo '--- Registered Clients ---'
   if [[ -f "$WG_CONF" ]]; then
     local peers
     peers=$(list_clients)
     if [[ -n "$peers" ]]; then printf '%s\n' "$peers" | while IFS='|' read -r name ip; do printf '  %-20s %s\n' "$name" "$ip"; done
-    else echo '  暂无通过此脚本登记的客户端。'; fi
+    else echo '  No clients registered by this script.'; fi
   fi
   echo '========================================'
 }
@@ -75,23 +75,23 @@ list_clients() {
 }
 
 install_wireguard() {
-  echo '安装/初始化 WireGuard...'
-  command -v apt-get >/dev/null 2>&1 || { echo '此脚本目前支持 Ubuntu/Debian (apt)。' >&2; return 1; }
+  echo 'Installing/initializing WireGuard...'
+  command -v apt-get >/dev/null 2>&1 || { echo 'This script currently supports Ubuntu/Debian (apt).' >&2; return 1; }
   apt-get update
   DEBIAN_FRONTEND=noninteractive apt-get install -y wireguard iptables curl
   install -d -m 700 /etc/wireguard
   if [[ -e "$WG_CONF" ]]; then
-    echo "检测到现有配置 $WG_CONF；不会覆盖。尝试启用现有服务。"
+    echo "Existing config found at $WG_CONF; it will not be overwritten. Attempting to enable the existing service."
     systemctl enable --now "wg-quick@$WG_IF"
     return
   fi
   if [[ -e /etc/wireguard/server_private.key || -e /etc/wireguard/server_public.key ]]; then
-    echo '检测到已有服务器密钥但没有 wg0.conf。为保护密钥，停止自动初始化；请先人工核对 /etc/wireguard。' >&2
+    echo 'Existing server key found but wg0.conf is missing. Initialization stopped to protect the key; inspect /etc/wireguard manually.' >&2
     return 1
   fi
   local egress server_key
   egress=$(ip -4 route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1);exit}}')
-  [[ -n "$egress" ]] || { echo '无法识别 VPS 默认出口网卡。' >&2; return 1; }
+  [[ -n "$egress" ]] || { echo 'Could not detect the VPS default egress interface.' >&2; return 1; }
   umask 077
   wg genkey > /etc/wireguard/server_private.key
   wg pubkey < /etc/wireguard/server_private.key > /etc/wireguard/server_public.key
@@ -108,45 +108,45 @@ EOF
   printf '%s\n' 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-wireguard-forward.conf
   sysctl --system >/dev/null
   systemctl enable --now "wg-quick@$WG_IF"
-  echo "初始化完成。服务器公钥：$(cat /etc/wireguard/server_public.key)"
-  echo "请在 AWS 安全组/云厂商防火墙中允许 UDP $WG_PORT 入站。"
+  echo "Initialization complete. Server public key: $(cat /etc/wireguard/server_public.key)"
+  echo "Allow inbound UDP $WG_PORT in the AWS security group or your cloud firewall."
 }
 
 add_client() {
-  [[ -f "$WG_CONF" ]] || { echo 'WireGuard 尚未初始化，请先选择安装/初始化。'; return 1; }
-  systemctl is-active --quiet "wg-quick@$WG_IF" || { echo 'wg0 服务未运行，请先检查状态/日志。'; return 1; }
+  [[ -f "$WG_CONF" ]] || { echo 'WireGuard is not initialized. Choose Install/Initialize first.'; return 1; }
+  systemctl is-active --quiet "wg-quick@$WG_IF" || { echo 'wg0 service is inactive. Check the status and logs first.'; return 1; }
   local name pub ip n endpoint server_pub server_port profile backup
-  read -r -p '客户端名称 (字母、数字、_、-，最多32位): ' name
-  [[ "$name" =~ ^[a-zA-Z0-9_-]{1,32}$ ]] || { echo '名称不符合格式。'; return 1; }
-  grep -Fq "# client-name: $name" "$WG_CONF" && { echo '此名称已存在。'; return 1; }
-  echo '请在 Windows WireGuard 中选择 Add empty tunnel，复制它生成的 Public key。'
-  read -r -p '粘贴客户端 Public key: ' pub
-  [[ "$pub" =~ ^[A-Za-z0-9+/]{42,43}=?$ ]] || { echo '公钥格式不正确。'; return 1; }
-  grep -Fq "PublicKey = $pub" "$WG_CONF" && { echo '此公钥已登记。'; return 1; }
+  read -r -p 'Client name (letters, numbers, _ or -, up to 32 characters): ' name
+  [[ "$name" =~ ^[a-zA-Z0-9_-]{1,32}$ ]] || { echo 'Invalid client name.'; return 1; }
+  grep -Fq "# client-name: $name" "$WG_CONF" && { echo 'A client with this name already exists.'; return 1; }
+  echo 'In the Windows WireGuard app, select Add empty tunnel and copy its generated public key.'
+  read -r -p 'Paste the client public key: ' pub
+  [[ "$pub" =~ ^[A-Za-z0-9+/]{42,43}=?$ ]] || { echo 'Invalid public key format.'; return 1; }
+  grep -Fq "PublicKey = $pub" "$WG_CONF" && { echo 'This public key is already registered.'; return 1; }
   ip=''
   for n in $(seq 2 254); do
     if ! grep -qF "AllowedIPs = 10.8.0.$n/32" "$WG_CONF"; then ip="10.8.0.$n"; break; fi
   done
-  [[ -n "$ip" ]] || { echo '客户端地址池已用完。'; return 1; }
+  [[ -n "$ip" ]] || { echo 'The client address pool is full.'; return 1; }
   mkdir -p "$CLIENT_DIR"; chmod 700 "$CLIENT_DIR"
   backup="$WG_CONF.bak.$(date +%Y%m%d%H%M%S)"
   cp -p "$WG_CONF" "$backup"
   printf '\n[Peer]\n# client-name: %s\nPublicKey = %s\nAllowedIPs = %s/32\n' "$name" "$pub" "$ip" >> "$WG_CONF"
   if ! wg set "$WG_IF" peer "$pub" allowed-ips "$ip/32"; then
     cp -p "$backup" "$WG_CONF"
-    echo '运行时添加失败，已恢复配置备份。' >&2
+    echo 'Failed to add the peer at runtime; restored the config backup.' >&2
     return 1
   fi
   server_pub=$(cat /etc/wireguard/server_public.key)
   server_port=$(wg show "$WG_IF" listen-port 2>/dev/null || awk -F= '/^[[:space:]]*ListenPort[[:space:]]*=/ {gsub(/[[:space:]]/,"",$2); print $2; exit}' "$WG_CONF")
   endpoint=$(curl -4fsS --max-time 5 https://checkip.amazonaws.com 2>/dev/null | tr -d '\r\n' || true)
-  if [[ -z "$endpoint" ]]; then read -r -p '无法自动检测公网 IPv4，请输入服务器公网 IPv4: ' endpoint; fi
-  [[ "$endpoint" =~ ^[0-9.]+$ ]] || { echo '服务器公网 IPv4 无效；Peer 已添加。请稍后手工补齐客户端配置。' >&2; return 1; }
+  if [[ -z "$endpoint" ]]; then read -r -p 'Could not detect the public IPv4. Enter the server public IPv4: ' endpoint; fi
+  [[ "$endpoint" =~ ^[0-9.]+$ ]] || { echo 'Invalid server public IPv4. The peer was added; complete the client config manually.' >&2; return 1; }
   profile="$CLIENT_DIR/$name.conf"
   umask 077
   cat > "$profile" <<EOF
 [Interface]
-PrivateKey = <替换为 Windows WireGuard 本机生成的客户端私钥>
+PrivateKey = <REPLACE_WITH_CLIENT_PRIVATE_KEY_GENERATED_ON_WINDOWS>
 Address = $ip/32
 DNS = 1.1.1.1
 
@@ -157,70 +157,70 @@ AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25
 EOF
   chmod 600 "$profile"
-  echo "客户端 $name ($ip) 已加入。配置模板：$profile"
-  echo '将配置安全复制到 Windows，在本机将 PrivateKey 占位符替换为该空隧道的私钥后导入。客户端私钥不要上传到服务器。'
+  echo "Client $name ($ip) added. Config template: $profile"
+  echo 'Securely copy the template to Windows, replace the PrivateKey placeholder locally with the key from the empty tunnel, then import it. Never upload the client private key to the server.'
 }
 
 change_port() {
-  [[ -f "$WG_CONF" ]] || { echo '找不到 wg0 配置，请先安装/初始化。'; return 1; }
+  [[ -f "$WG_CONF" ]] || { echo 'wg0 config not found. Install/initialize WireGuard first.'; return 1; }
   local current new_port line_count tmp backup runtime profile
   current=$(wg show "$WG_IF" listen-port 2>/dev/null || awk -F= '/^[[:space:]]*ListenPort[[:space:]]*=/ {gsub(/[[:space:]]/,"",$2); print $2; exit}' "$WG_CONF")
-  echo "当前 UDP 端口：${current:-未设置}"
-  read -r -p '输入新的 UDP 端口 (1-65535): ' new_port
-  [[ "$new_port" =~ ^[0-9]{1,5}$ ]] || { echo '端口必须是 1 到 65535 的整数。'; return 1; }
+  echo "Current UDP port: ${current:-unset}"
+  read -r -p 'Enter a new UDP port (1-65535): ' new_port
+  [[ "$new_port" =~ ^[0-9]{1,5}$ ]] || { echo 'Port must be an integer from 1 to 65535.'; return 1; }
   new_port=$((10#$new_port))
-  (( new_port >= 1 && new_port <= 65535 )) || { echo '端口必须是 1 到 65535。'; return 1; }
-  [[ "$new_port" != "$current" ]] || { echo '新端口与当前端口相同。'; return 0; }
+  (( new_port >= 1 && new_port <= 65535 )) || { echo 'Port must be between 1 and 65535.'; return 1; }
+  [[ "$new_port" != "$current" ]] || { echo 'The new port matches the current port.'; return 0; }
   if command -v ss >/dev/null 2>&1 && ss -Hlun "sport = :$new_port" 2>/dev/null | grep -q .; then
-    echo "UDP 端口 $new_port 已被占用，未修改。" >&2
+    echo "UDP port $new_port is already in use; no changes made." >&2
     return 1
   fi
   line_count=$(grep -Ec '^[[:space:]]*ListenPort[[:space:]]*=' "$WG_CONF" || true)
-  [[ "$line_count" == 1 ]] || { echo '配置文件需恰有一条 ListenPort；未修改。' >&2; return 1; }
+  [[ "$line_count" == 1 ]] || { echo 'The config must contain exactly one ListenPort entry; no changes made.' >&2; return 1; }
   tmp=$(mktemp)
   sed -E "s/^([[:space:]]*ListenPort[[:space:]]*=[[:space:]]*)[0-9]+/\\1$new_port/" "$WG_CONF" > "$tmp"
-  grep -Eq "^[[:space:]]*ListenPort[[:space:]]*=[[:space:]]*$new_port[[:space:]]*$" "$tmp" || { rm -f "$tmp"; echo '无法更新配置端口。' >&2; return 1; }
+  grep -Eq "^[[:space:]]*ListenPort[[:space:]]*=[[:space:]]*$new_port[[:space:]]*$" "$tmp" || { rm -f "$tmp"; echo 'Could not update the config port.' >&2; return 1; }
   backup="$WG_CONF.bak.$(date +%Y%m%d%H%M%S)"
   cp -p "$WG_CONF" "$backup"
   install -m 600 "$tmp" "$WG_CONF"; rm -f "$tmp"
   if ip link show "$WG_IF" >/dev/null 2>&1; then
     if ! wg set "$WG_IF" listen-port "$new_port"; then
       cp -p "$backup" "$WG_CONF"
-      echo '运行中端口更新失败，配置已恢复备份。' >&2
+      echo 'Runtime port update failed; restored the config backup.' >&2
       return 1
     fi
-    echo "运行中的 WireGuard 与配置文件已切换到 UDP $new_port。"
+    echo "WireGuard runtime and config have been switched to UDP $new_port."
   else
-    echo "配置文件已改为 UDP $new_port；服务启动后生效。"
+    echo "Config updated to UDP $new_port; the change will take effect when the service starts."
   fi
   for profile in "$CLIENT_DIR"/*.conf; do
     [[ -f "$profile" ]] || continue
     sed -i -E "s/(Endpoint[[:space:]]*=[[:space:]]*[^:]+:)[0-9]+/\\1$new_port/" "$profile"
   done
   runtime=$(wg show "$WG_IF" listen-port 2>/dev/null || true)
-  echo "请同步修改云安全组/防火墙的 UDP 入站端口，并更新已导入 Windows 客户端的 Endpoint 端口。"
-  echo "服务器配置备份：$backup"
-  [[ -z "$runtime" || "$runtime" == "$new_port" ]] || echo "警告：运行端口显示为 $runtime，请检查服务状态。" >&2
+  echo 'Update the UDP inbound port in your cloud security group/firewall and change the Endpoint port in imported Windows client tunnels.'
+  echo "Server config backup: $backup"
+  [[ -z "$runtime" || "$runtime" == "$new_port" ]] || echo "Warning: runtime port reports $runtime; check the service status." >&2
 }
 
 remove_client() {
-  [[ -f "$WG_CONF" ]] || { echo 'WireGuard 尚未初始化。'; return 1; }
+  [[ -f "$WG_CONF" ]] || { echo 'WireGuard is not initialized.'; return 1; }
   local lines count choice selected name ip pub tmp backup
   lines=$(list_clients)
-  [[ -n "$lines" ]] || { echo '没有通过此脚本登记的客户端。'; return 1; }
-  echo '选择要删除的客户端：'
+  [[ -n "$lines" ]] || { echo 'No clients registered by this script.'; return 1; }
+  echo 'Select a client to remove:'
   count=0
   while IFS='|' read -r name ip; do count=$((count+1)); printf '  %d) %s (%s)\n' "$count" "$name" "$ip"; done <<< "$lines"
-  read -r -p '输入序号 (0 取消): ' choice
-  [[ "$choice" =~ ^[0-9]+$ ]] || { echo '无效序号。'; return 1; }
+  read -r -p 'Enter a number (0 to cancel): ' choice
+  [[ "$choice" =~ ^[0-9]+$ ]] || { echo 'Invalid selection.'; return 1; }
   if (( choice == 0 )); then return 0; fi
   selected=$(printf '%s\n' "$lines" | sed -n "${choice}p")
-  [[ -n "$selected" ]] || { echo '无效序号。'; return 1; }
+  [[ -n "$selected" ]] || { echo 'Invalid selection.'; return 1; }
   IFS='|' read -r name ip <<< "$selected"
-  read -r -p "确认删除 $name ($ip)? [y/N] " confirm
-  [[ "$confirm" =~ ^[Yy]$ ]] || { echo '已取消。'; return 0; }
+  read -r -p "Remove $name ($ip)? [y/N] " confirm
+  [[ "$confirm" =~ ^[Yy]$ ]] || { echo 'Cancelled.'; return 0; }
   pub=$(awk -v target="# client-name: $name" '$0 == target {f=1; next} f && /^PublicKey[[:space:]]*=/ {sub(/^[^=]*=[[:space:]]*/, ""); print; exit}' "$WG_CONF")
-  [[ -n "$pub" ]] || { echo '配置中找不到该客户端公钥。'; return 1; }
+  [[ -n "$pub" ]] || { echo 'Could not find this client public key in the config.'; return 1; }
   backup="$WG_CONF.bak.$(date +%Y%m%d%H%M%S)"; cp -p "$WG_CONF" "$backup"
   tmp=$(mktemp)
   awk -v target="# client-name: $name" '
@@ -229,39 +229,39 @@ remove_client() {
     { print }
     END { if (inside && !drop) printf "%s", block }
   ' "$WG_CONF" > "$tmp"
-  if cmp -s "$WG_CONF" "$tmp"; then rm -f "$tmp"; echo '没有找到要删除的客户端配置。'; return 1; fi
+  if cmp -s "$WG_CONF" "$tmp"; then rm -f "$tmp"; echo 'Client config entry not found.'; return 1; fi
   install -m 600 "$tmp" "$WG_CONF"; rm -f "$tmp"
   wg set "$WG_IF" peer "$pub" remove 2>/dev/null || true
   rm -f -- "$CLIENT_DIR/$name.conf"
-  echo "客户端 $name 已从服务器移除；配置备份：$backup"
-  echo '如客户端曾导入配置，也请在 Windows WireGuard 中删除该隧道。'
+  echo "Client $name removed from the server. Config backup: $backup"
+  echo 'If the client config was imported, also remove that tunnel from the Windows WireGuard app.'
 }
 
 show_logs() { journalctl -u "wg-quick@$WG_IF" -n 80 --no-pager; }
 
 need_root
 if ! is_installed; then
-  echo '当前 VPS 未安装 WireGuard。'
-  read -r -p '现在安装并初始化 wg0？[y/N] ' answer
+  echo 'WireGuard is not installed on this VPS.'
+  read -r -p 'Install and initialize wg0 now? [y/N] ' answer
   [[ "$answer" =~ ^[Yy]$ ]] && install_wireguard || true
 elif [[ ! -f "$WG_CONF" ]]; then
-  echo '已安装 WireGuard，但未找到 wg0 配置。'
-  read -r -p '现在初始化 wg0？[y/N] ' answer
+  echo 'WireGuard is installed, but wg0.conf was not found.'
+  read -r -p 'Initialize wg0 now? [y/N] ' answer
   [[ "$answer" =~ ^[Yy]$ ]] && install_wireguard || true
 fi
 
 while true; do
   show_status
   cat <<'EOF'
-1) 刷新状态
-2) 安装/初始化 WireGuard
-3) 添加 Windows 客户端
-4) 删除客户端
-5) 查看服务日志
-6) 更换 WireGuard UDP 端口
-0) 退出
+1) Refresh status
+2) Install/initialize WireGuard
+3) Add Windows client
+4) Remove client
+5) View service logs
+6) Change WireGuard UDP port
+0) Exit
 EOF
-  read -r -p '请选择: ' choice
+  read -r -p 'Select an option: ' choice
   case "$choice" in
     1) ;;
     2) install_wireguard; pause ;;
@@ -270,6 +270,7 @@ EOF
     5) show_logs; pause ;;
     6) change_port; pause ;;
     0) exit 0 ;;
-    *) echo '无效选项。'; pause ;;
+    *) echo 'Invalid option.'; pause ;;
   esac
 done
+
