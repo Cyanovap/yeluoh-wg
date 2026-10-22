@@ -11,6 +11,30 @@ chmod 700 yeluoh-wg.sh
 sudo bash yeluoh-wg.sh
 ```
 
+## 从 GitHub 部署到 VPS
+
+仓库公开后，可直接在 Ubuntu/Debian VPS 上克隆并运行：
+
+```bash
+sudo apt update
+sudo apt install -y git
+git clone https://github.com/Cyanovap/yeluoh-wg.git ~/yeluoh-wg
+sudo bash ~/yeluoh-wg/yeluoh-wg.sh
+```
+
+再次运行管理菜单：
+
+```bash
+sudo bash ~/yeluoh-wg/yeluoh-wg.sh
+```
+
+以后拉取脚本更新并重新运行：
+
+```bash
+git -C ~/yeluoh-wg pull --ff-only
+sudo bash ~/yeluoh-wg/yeluoh-wg.sh
+```
+
 菜单提供刷新状态、安装/初始化、添加客户端、删除客户端、查看日志和退出。安装/初始化适用于 Ubuntu/Debian，配置为指南中的 `wg0`、UDP `51820`、`10.8.0.0/24`；会启用 IPv4 转发和 NAT，并启用 `wg-quick@wg0`。已有 `/etc/wireguard/wg0.conf` 时不会覆盖。
 
 ## 添加 Windows 客户端
@@ -39,3 +63,4 @@ sudo bash yeluoh-wg.sh
 - [WireGuard Quick Start](https://www.wireguard.com/quickstart/)：密钥生成、`wg show` 与接口配置。
 - [Ubuntu Server WireGuard VPN](https://ubuntu.com/server/docs/how-to/wireguard-vpn/)：安装、Peer 配置及转发/NAT。
 - [AWS EC2 安全组规则](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/creating-security-group.html)：入站规则配置。
+
